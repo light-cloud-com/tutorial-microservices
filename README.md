@@ -17,7 +17,7 @@ flowchart TD
 | Folder | What it is | Light Cloud deploys it as |
 |---|---|---|
 | `web/` | React (Vite) shop front | Static site |
-| `catalog-api/` | Products and stock (Express) | Container, port from `$PORT` |
+| `catalog-api/` | Products and stock (Express); `GET /work?ms=500` burns CPU for load tests | Container, port from `$PORT` |
 | `orders-api/` | Orders (FastAPI); asks catalog-api to reserve stock | Container, port from `$PORT` |
 
 Each folder is a separate Light Cloud app on this same repository, with its
@@ -50,6 +50,7 @@ own **Root directory**. A push only redeploys the apps whose folder changed.
 | `WEB_ORIGIN` | catalog-api, orders-api | one or more origins, comma-separated: `https://main-web-<workspace>.light-cloud.io,http://localhost:5173` |
 | `CATALOG_API_URL` | orders-api | `https://main-catalog-api-<workspace>.light-cloud.io` |
 | `CATALOG_TIMEOUT_SECONDS` | orders-api (optional) | seconds to wait for catalog-api, default `5` |
+| `DB_POOL_MAX` | catalog-api (optional) | database connections per instance, default `2`; keep `DB_POOL_MAX` x max instances under the database's connection limit |
 
 For `catalog-api` (Node.js), end the Light Cloud connection string with
 `?sslmode=require&uselibpqcompat=true`, otherwise the `pg` driver rejects
