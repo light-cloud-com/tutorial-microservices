@@ -4,24 +4,14 @@ A tiny coffee shop split into three services and one database. It is the
 example app for the "Microservices on Light Cloud" tutorial series on the
 [Light Cloud blog](https://blog.light-cloud.com/tutorials).
 
-```
-                 browser
-                    |
-                    v
-          +------------------+
-          |  web (React)     |   static site
-          +------------------+
-            |              |
-            v              v
-+------------------+   +------------------+
-| catalog-api      |<--| orders-api       |   containers
-| Node.js, Express |   | Python, FastAPI  |
-+------------------+   +------------------+
-            |              |
-            v              v
-          +------------------+
-          |  PostgreSQL      |
-          +------------------+
+```mermaid
+flowchart TD
+    browser([Browser]) --> web["web<br/>React, static site"]
+    web -- "GET /products" --> catalog["catalog-api<br/>Node.js, Express"]
+    web -- "GET, POST /orders" --> orders["orders-api<br/>Python, FastAPI"]
+    orders -- "POST /internal/products/:id/reserve<br/>x-internal-secret" --> catalog
+    catalog -- "products table" --> db[("PostgreSQL")]
+    orders -- "orders table" --> db
 ```
 
 | Folder | What it is | Light Cloud deploys it as |
