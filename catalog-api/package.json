@@ -1,0 +1,16 @@
+{
+  "name": "catalog-api",
+  "version": "1.0.0",
+  "description": "Product catalog service for the Light Cloud microservices tutorial",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "pg": "^8.16.0"
+  }
+}

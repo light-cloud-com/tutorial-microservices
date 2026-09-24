@@ -1,0 +1,106 @@
+// catalog-api: owns the products table.
+// Public:   GET /health, GET /products, GET /products/:id
+// Internal: POST /internal/products/:id/reserve (needs the x-internal-secret header)
+
+import { randomUUID } from "node:crypto";
+import cors from "cors";
+import express from "express";
+import pg from "pg";
+
+const PORT = process.env.PORT || 8080;
+const WEB_ORIGIN = process.env.WEB_ORIGIN || "http://localhost:5173";
+const INTERNAL_SECRET = process.env.INTERNAL_SECRET;
+
+const db = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+
+const PRODUCTS = [
+  ["Espresso beans, 1 kg", 2400, 40],
+  ["Pour-over kettle", 5900, 12],
+  ["Ceramic mug", 1500, 100],
+  ["Paper filters, 100 pack", 600, 250],
+];
+
+async function setUpDatabase() {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS products (
+      id          SERIAL PRIMARY KEY,
+      name        TEXT    NOT NULL,
+      price_cents INTEGER NOT NULL,
+      stock       INTEGER NOT NULL
+    )
+  `);
+  const { rows } = await db.query("SELECT count(*)::int AS n FROM products");
+  if (rows[0].n === 0) {
+    for (const [name, price, stock] of PRODUCTS) {
+      await db.query(
+        "INSERT INTO products (name, price_cents, stock) VALUES ($1, $2, $3)",
+        [name, price, stock]
+      );
+    }
+  }
+}
+
+function log(req, message, extra = {}) {
+  console.log(JSON.stringify({ service: "catalog-api", requestId: req.requestId, message, ...extra }));
+}
+
+const app = express();
+app.use(express.json());
+app.use(cors({ origin: WEB_ORIGIN }));
+
+// Every request gets an ID. If another service sent one, keep it, so one
+// request can be followed across all services in the logs.
+app.use((req, res, next) => {
+  req.requestId = req.get("x-request-id") || randomUUID();
+  res.set("x-request-id", req.requestId);
+  next();
+});
+
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", service: "catalog-api" });
+});
+
+app.get("/products", async (req, res) => {
+  const { rows } = await db.query("SELECT * FROM products ORDER BY id");
+  log(req, "listed products", { count: rows.length });
+  res.json(rows);
+});
+
+app.get("/products/:id", async (req, res) => {
+  const { rows } = await db.query("SELECT * FROM products WHERE id = $1", [req.params.id]);
+  if (rows.length === 0) return res.status(404).json({ error: "Product not found" });
+  res.json(rows[0]);
+});
+
+// Only other services may call /internal routes.
+function requireInternalSecret(req, res, next) {
+  if (!INTERNAL_SECRET || req.get("x-internal-secret") !== INTERNAL_SECRET) {
+    log(req, "rejected internal call");
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  next();
+}
+
+app.post("/internal/products/:id/reserve", requireInternalSecret, async (req, res) => {
+  const quantity = Number(req.body.quantity);
+  if (!Number.isInteger(quantity) || quantity < 1) {
+    return res.status(400).json({ error: "quantity must be a positive whole number" });
+  }
+  const { rows } = await db.query(
+    `UPDATE products SET stock = stock - $2
+     WHERE id = $1 AND stock >= $2
+     RETURNING *`,
+    [req.params.id, quantity]
+  );
+  if (rows.length === 0) {
+    log(req, "reserve failed", { productId: req.params.id, quantity });
+    return res.status(409).json({ error: "Not enough stock" });
+  }
+  log(req, "reserved stock", { productId: rows[0].id, quantity, stockLeft: rows[0].stock });
+  res.json(rows[0]);
+});
+
+await setUpDatabase();
+app.listen(PORT, () => {
+  console.log(`catalog-api listening on port ${PORT}`);
+});
