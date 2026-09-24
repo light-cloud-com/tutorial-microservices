@@ -2,14 +2,22 @@
 // Public:   GET /health, GET /products, GET /products/:id
 // Internal: POST /internal/products/:id/reserve (needs the x-internal-secret header)
 
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import cors from "cors";
 import express from "express";
 import pg from "pg";
 
 const PORT = process.env.PORT || 8080;
-const WEB_ORIGIN = process.env.WEB_ORIGIN || "http://localhost:5173";
+// One or more browser origins allowed to call this API, comma-separated:
+// WEB_ORIGIN=https://main-web-myteam.light-cloud.io,http://localhost:5173
+const WEB_ORIGINS = (process.env.WEB_ORIGIN || "http://localhost:5173")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+// The current secret, plus the previous one while a rotation is in progress.
 const INTERNAL_SECRET = process.env.INTERNAL_SECRET;
+const INTERNAL_SECRET_PREVIOUS = process.env.INTERNAL_SECRET_PREVIOUS;
 
 const db = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 
@@ -46,7 +54,7 @@ function log(req, message, extra = {}) {
 
 const app = express();
 app.use(express.json());
-app.use(cors({ origin: WEB_ORIGIN }));
+app.use(cors({ origin: WEB_ORIGINS }));
 
 // Every request gets an ID. If another service sent one, keep it, so one
 // request can be followed across all services in the logs.
@@ -72,13 +80,26 @@ app.get("/products/:id", async (req, res) => {
   res.json(rows[0]);
 });
 
+// Compares in constant time, so response timing does not leak the secret.
+function sameSecret(expected, given) {
+  if (!expected || !given) return false;
+  const a = Buffer.from(expected);
+  const b = Buffer.from(given);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 // Only other services may call /internal routes.
 function requireInternalSecret(req, res, next) {
-  if (!INTERNAL_SECRET || req.get("x-internal-secret") !== INTERNAL_SECRET) {
-    log(req, "rejected internal call");
-    return res.status(401).json({ error: "Unauthorized" });
+  const given = req.get("x-internal-secret");
+  if (sameSecret(INTERNAL_SECRET, given)) return next();
+  if (sameSecret(INTERNAL_SECRET_PREVIOUS, given)) {
+    // Still accepted during a rotation. When this stops appearing in the
+    // logs, every caller has the new secret and the old one can be removed.
+    log(req, "internal call used the previous secret");
+    return next();
   }
-  next();
+  log(req, "rejected internal call");
+  return res.status(401).json({ error: "Unauthorized" });
 }
 
 app.post("/internal/products/:id/reserve", requireInternalSecret, async (req, res) => {

@@ -16,7 +16,10 @@ from pydantic import BaseModel, Field
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 CATALOG_API_URL = os.environ.get("CATALOG_API_URL", "http://localhost:8080")
 INTERNAL_SECRET = os.environ.get("INTERNAL_SECRET", "")
-WEB_ORIGIN = os.environ.get("WEB_ORIGIN", "http://localhost:5173")
+# One or more browser origins allowed to call this API, comma-separated.
+WEB_ORIGINS = [o.strip() for o in os.environ.get("WEB_ORIGIN", "http://localhost:5173").split(",") if o.strip()]
+# How long to wait for catalog-api before giving up on an order.
+CATALOG_TIMEOUT_SECONDS = float(os.environ.get("CATALOG_TIMEOUT_SECONDS", "5"))
 
 
 def log(request_id: str, message: str, **extra):
@@ -41,7 +44,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="orders-api", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=[WEB_ORIGIN], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(CORSMiddleware, allow_origins=WEB_ORIGINS, allow_methods=["*"], allow_headers=["*"])
 
 
 # Every request gets an ID. It is passed on to catalog-api, so one order can
@@ -81,12 +84,18 @@ async def create_order(order: NewOrder, request: Request):
     request_id = request.state.request_id
     log(request_id, "placing order", product_id=order.product_id, quantity=order.quantity)
 
-    async with httpx.AsyncClient(timeout=10) as client:
-        reply = await client.post(
-            f"{CATALOG_API_URL}/internal/products/{order.product_id}/reserve",
-            json={"quantity": order.quantity},
-            headers={"x-internal-secret": INTERNAL_SECRET, "x-request-id": request_id},
-        )
+    try:
+        async with httpx.AsyncClient(timeout=CATALOG_TIMEOUT_SECONDS) as client:
+            reply = await client.post(
+                f"{CATALOG_API_URL}/internal/products/{order.product_id}/reserve",
+                json={"quantity": order.quantity},
+                headers={"x-internal-secret": INTERNAL_SECRET, "x-request-id": request_id},
+            )
+    except httpx.HTTPError as error:
+        # Timed out or could not connect: fail fast with a clear answer
+        # instead of hanging the customer's request.
+        log(request_id, "catalog-api unreachable", error=type(error).__name__)
+        raise HTTPException(status_code=503, detail="Catalog service unavailable, please try again")
 
     if reply.status_code == 409:
         raise HTTPException(status_code=409, detail="Not enough stock")

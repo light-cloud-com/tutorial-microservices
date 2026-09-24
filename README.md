@@ -26,10 +26,12 @@ own **Root directory**. A push only redeploys the apps whose folder changed.
 ## How the services talk
 
 - The browser calls both APIs directly, so both APIs allow the web app's
-  address with CORS (`WEB_ORIGIN`).
+  address with CORS (`WEB_ORIGIN`, one or more comma-separated origins).
 - `orders-api` calls `catalog-api` at `POST /internal/products/:id/reserve`.
   Internal routes require the `x-internal-secret` header, which must match
-  `INTERNAL_SECRET` on both services.
+  `INTERNAL_SECRET` on both services. During a rotation catalog-api also
+  accepts `INTERNAL_SECRET_PREVIOUS`, so the secret can change without
+  downtime.
 - Every request carries an `x-request-id`. It is passed from orders-api to
   catalog-api and printed in both logs, so one order can be followed across
   services.
@@ -44,8 +46,10 @@ own **Root directory**. A push only redeploys the apps whose folder changed.
 | `VITE_ORDERS_API_URL` | web (build time) | `https://main-orders-api-<workspace>.light-cloud.io` |
 | `DATABASE_URL` | catalog-api, orders-api | the database connection string |
 | `INTERNAL_SECRET` | catalog-api, orders-api | a long random string, same on both |
-| `WEB_ORIGIN` | catalog-api, orders-api | `https://main-web-<workspace>.light-cloud.io` |
+| `INTERNAL_SECRET_PREVIOUS` | catalog-api (optional) | the old secret, only while rotating |
+| `WEB_ORIGIN` | catalog-api, orders-api | one or more origins, comma-separated: `https://main-web-<workspace>.light-cloud.io,http://localhost:5173` |
 | `CATALOG_API_URL` | orders-api | `https://main-catalog-api-<workspace>.light-cloud.io` |
+| `CATALOG_TIMEOUT_SECONDS` | orders-api (optional) | seconds to wait for catalog-api, default `5` |
 
 For `catalog-api` (Node.js), end the Light Cloud connection string with
 `?sslmode=require&uselibpqcompat=true`, otherwise the `pg` driver rejects
