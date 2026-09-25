@@ -85,7 +85,10 @@ app.get("/work", (req, res) => {
 });
 
 app.get("/products", async (req, res) => {
-  const { rows } = await db.query("SELECT * FROM products ORDER BY id");
+  const { rows } = await db.query(
+    `SELECT *, CASE WHEN stock = 0 THEN 'sold out' WHEN stock < 10 THEN 'low' ELSE 'in stock' END AS stock_status
+     FROM products ORDER BY id`
+  );
   log(req, "listed products", { count: rows.length });
   res.json(rows);
 });
