@@ -60,7 +60,9 @@ export default function App() {
             <li key={product.id}>
               <strong>{product.name}</strong>
               <span>{price(product.price_cents)}</span>
-              <span className="stock">{product.stock} in stock</span>
+              <span className={`stock ${product.stock_status === "low" ? "low" : ""}`}>
+                {product.stock_status ? `${product.stock_status} (${product.stock})` : `${product.stock} in stock`}
+              </span>
               <button onClick={() => buy(product)} disabled={product.stock === 0}>
                 Buy
               </button>
