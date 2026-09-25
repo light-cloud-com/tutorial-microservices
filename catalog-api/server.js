@@ -54,8 +54,10 @@ async function setUpDatabase() {
   }
 }
 
-function log(req, message, extra = {}) {
-  console.log(JSON.stringify({ service: "catalog-api", requestId: req.requestId, message, ...extra }));
+// One JSON object per line. "severity" is what the Logs tab's level filter
+// reads (INFO, WARNING, ERROR); requestId ties lines from all services together.
+function log(req, message, extra = {}, severity = "INFO") {
+  console.log(JSON.stringify({ severity, service: "catalog-api", requestId: req.requestId, message, ...extra }));
 }
 
 const app = express();
@@ -133,7 +135,13 @@ app.post("/internal/products/:id/reserve", requireInternalSecret, async (req, re
     [req.params.id, quantity]
   );
   if (rows.length === 0) {
-    log(req, "reserve failed", { productId: req.params.id, quantity });
+    // Nothing updated: either the product does not exist or stock is short.
+    const exists = await db.query("SELECT 1 FROM products WHERE id = $1", [req.params.id]);
+    if (exists.rows.length === 0) {
+      log(req, "product not found", { productId: req.params.id }, "WARNING");
+      return res.status(404).json({ error: "Product not found" });
+    }
+    log(req, "reserve failed", { productId: req.params.id, quantity }, "WARNING");
     return res.status(409).json({ error: "Not enough stock" });
   }
   log(req, "reserved stock", { productId: rows[0].id, quantity, stockLeft: rows[0].stock });
@@ -144,7 +152,7 @@ app.post("/internal/products/:id/reserve", requireInternalSecret, async (req, re
 // temporary (503, try again); anything else is a 500. Always JSON.
 app.use((err, req, res, next) => {
   const busy = /too many connections|remaining connection slots/i.test(err.message);
-  log(req, busy ? "database busy" : "unhandled error", { error: err.message });
+  log(req, busy ? "database busy" : "unhandled error", { error: err.message }, "ERROR");
   res.status(busy ? 503 : 500).json({ error: busy ? "Database busy, please try again" : "Internal error" });
 });
 

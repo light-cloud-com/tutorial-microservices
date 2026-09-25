@@ -22,8 +22,10 @@ WEB_ORIGINS = [o.strip() for o in os.environ.get("WEB_ORIGIN", "http://localhost
 CATALOG_TIMEOUT_SECONDS = float(os.environ.get("CATALOG_TIMEOUT_SECONDS", "5"))
 
 
-def log(request_id: str, message: str, **extra):
-    print(json.dumps({"service": "orders-api", "requestId": request_id, "message": message, **extra}), flush=True)
+# One JSON object per line. "severity" is what the Logs tab's level filter
+# reads (INFO, WARNING, ERROR); requestId ties lines from all services together.
+def log(request_id: str, message: str, severity: str = "INFO", **extra):
+    print(json.dumps({"severity": severity, "service": "orders-api", "requestId": request_id, "message": message, **extra}), flush=True)
 
 
 @asynccontextmanager
@@ -94,13 +96,17 @@ async def create_order(order: NewOrder, request: Request):
     except httpx.HTTPError as error:
         # Timed out or could not connect: fail fast with a clear answer
         # instead of hanging the customer's request.
-        log(request_id, "catalog-api unreachable", error=type(error).__name__)
+        log(request_id, "catalog-api unreachable", "ERROR", error=type(error).__name__)
         raise HTTPException(status_code=503, detail="Catalog service unavailable, please try again")
 
+    if reply.status_code == 404:
+        log(request_id, "order for unknown product", "WARNING", product_id=order.product_id)
+        raise HTTPException(status_code=404, detail="Product not found")
     if reply.status_code == 409:
+        log(request_id, "not enough stock", "WARNING", product_id=order.product_id)
         raise HTTPException(status_code=409, detail="Not enough stock")
     if reply.status_code != 200:
-        log(request_id, "catalog-api error", status=reply.status_code)
+        log(request_id, "catalog-api error", "ERROR", status=reply.status_code)
         raise HTTPException(status_code=502, detail="Catalog service unavailable")
 
     product = reply.json()

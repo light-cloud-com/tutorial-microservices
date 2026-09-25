@@ -33,8 +33,9 @@ own **Root directory**. A push only redeploys the apps whose folder changed.
   accepts `INTERNAL_SECRET_PREVIOUS`, so the secret can change without
   downtime.
 - Every request carries an `x-request-id`. It is passed from orders-api to
-  catalog-api and printed in both logs, so one order can be followed across
-  services.
+  catalog-api, returned in the response and printed in both logs as JSON with
+  a `severity` field, so one order can be followed across services and
+  filtered by level in the Logs tab.
 - Both APIs use the same PostgreSQL database. Each service owns its own
   table (`products`, `orders`) and never reads the other's.
 
