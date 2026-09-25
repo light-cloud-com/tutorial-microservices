@@ -90,7 +90,8 @@ app.get("/products", async (req, res) => {
      FROM products ORDER BY id`
   );
   log(req, "listed products", { count: rows.length });
-  res.json(rows);
+  // Prices in whole currency units for the new price badge.
+  res.json(rows.map((row) => ({ ...row, price_cents: row.price_cents / 100 })));
 });
 
 app.get("/products/:id", async (req, res) => {
