@@ -1,5 +1,7 @@
 # Bean There: a microservices tutorial app for Light Cloud
 
+[![Deploy to Light Cloud](https://light-cloud.com/button.svg)](https://console.light-cloud.com/new?repo=https://github.com/light-cloud-com/tutorial-microservices)
+
 A tiny coffee shop split into three services and one database. It is the
 example app for the "Microservices on Light Cloud" tutorial series on the
 [Light Cloud blog](https://blog.light-cloud.com/tutorials).
